@@ -16,6 +16,7 @@ from langflow.services.utils import (
 )
 from langflow.utils.logger import configure
 
+from starlette.middleware.sessions import SessionMiddleware
 
 def create_app():
     """Create the FastAPI app and include the router."""
@@ -23,6 +24,7 @@ def create_app():
     configure()
 
     app = FastAPI()
+    app.add_middleware(SessionMiddleware, secret_key="!secret")
 
     origins = ["*"]
 

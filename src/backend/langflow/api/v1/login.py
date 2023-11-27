@@ -14,10 +14,56 @@ from langflow.services.auth.utils import (
 
 from langflow.services.getters import get_settings_service
 
+from starlette.requests import Request
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import HTMLResponse, RedirectResponse
+from authlib.integrations.starlette_client import OAuth, OAuthError
+
 router = APIRouter(tags=["Login"])
 
+client_id = 'langflow-client'
+client_secret = 'LQOhDSKRopEczKRCOl7eDuYnozGkJ51H'
+scope = 'openid email profile'
 
-@router.post("/login", response_model=Token)
+oauth = OAuth()
+
+CONF_URL = 'https://keycloak.css-da-02.hitachi-lumada.io/realms/langflow/.well-known/openid-configuration'
+oauth.register(
+    name='client',
+    client_id=client_id,
+    client_secret=client_secret,
+    server_metadata_url=CONF_URL,
+    client_kwargs={
+        'scope': scope
+    }
+)
+
+@router.get('/login')
+async def login(request: Request):
+    redirect_uri = request.url_for('callback')
+    response = await oauth.client.authorize_redirect(request, redirect_uri)
+    print(f'/login response {response}')
+    return response
+
+@router.get('/callback')
+async def callback(request: Request):
+    try:
+        token = await oauth.client.authorize_access_token(request)
+        print(f'/callback token {token}')
+    except OAuthError as error:
+        return HTMLResponse(f'<h1>{error.error}</h1>')
+    user = token.get('userinfo')
+    # if user:
+    #     request.session['user'] = dict(user)
+    response = RedirectResponse(url='/')
+    response.set_cookie('access_tkn_lflw', token['access_token'])
+    response.set_cookie('refresh_tkn_lflw', token['refresh_token'])
+    return response
+
+
+
+
+@router.post("/login-xyz", response_model=Token)
 async def login_to_get_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_session),
