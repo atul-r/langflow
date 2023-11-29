@@ -41,6 +41,7 @@ class AuthSettings(BaseSettings):
 
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+    AUTHENTICATION_TYPE: str = "local"
     class Config:
         validate_assignment = True
         extra = "ignore"
