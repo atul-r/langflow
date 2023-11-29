@@ -19,7 +19,7 @@ export default function LoginPage(): JSX.Element {
     useState<loginInputStateType>(CONTROL_LOGIN_STATE);
 
   const { password, username } = inputState;
-  const { login, getAuthentication, setUserData, setIsAdmin } =
+  const { login, isOidcLogin, getAuthentication, setUserData, setIsAdmin } =
     useContext(AuthContext);
   const navigate = useNavigate();
   const { setErrorData } = useContext(alertContext);
@@ -65,6 +65,10 @@ export default function LoginPage(): JSX.Element {
     }
   }
 
+  if(isOidcLogin) {
+    window.location.replace("/api/v1/login")
+    return <></>;
+  } else {
   return (
     <Form.Root
       onSubmit={(event) => {
@@ -149,4 +153,4 @@ export default function LoginPage(): JSX.Element {
       </div>
     </Form.Root>
   );
-}
+}}

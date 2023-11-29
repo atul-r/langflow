@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import Cookies from "universal-cookie";
-import { autoLogin as autoLoginApi, getLoggedUser } from "../controllers/API";
+import { autoLogin as autoLoginApi, authenticationType as authenticationTypeApi, getLoggedUser } from "../controllers/API";
 import { Users } from "../types/api";
 import { AuthContextType } from "../types/contexts/auth";
 import { alertContext } from "./alertContext";
@@ -8,6 +8,8 @@ import { alertContext } from "./alertContext";
 const initialValue: AuthContextType = {
   isAdmin: false,
   setIsAdmin: () => false,
+  isOidcLogin: false,
+  setIsOidcLogin: () => false,
   isAuthenticated: false,
   accessToken: null,
   refreshToken: null,
@@ -33,6 +35,7 @@ export function AuthProvider({ children }): React.ReactElement {
   );
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [isOidcLogin, setIsOidcLogin] = useState<boolean>(false); //
   const [userData, setUserData] = useState<Users | null>(null);
   const [autoLogin, setAutoLogin] = useState<boolean>(false);
   const { setLoading } = useContext(alertContext);
@@ -41,6 +44,18 @@ export function AuthProvider({ children }): React.ReactElement {
     if (storedAccessToken) {
       setAccessToken(storedAccessToken);
     }
+  }, []);
+
+  useEffect(() => {
+    authenticationTypeApi()
+      .then((res) => {
+        if (res && res["authentication_type"] == "oidc") {
+          setIsOidcLogin(true);
+        }
+      })
+      .catch((error) => {
+        setIsOidcLogin(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -107,6 +122,8 @@ export function AuthProvider({ children }): React.ReactElement {
       value={{
         isAdmin,
         setIsAdmin,
+        isOidcLogin,
+        setIsOidcLogin,
         isAuthenticated: !!accessToken,
         accessToken,
         refreshToken,

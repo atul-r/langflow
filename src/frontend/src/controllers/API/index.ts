@@ -393,6 +393,18 @@ export async function autoLogin() {
   }
 }
 
+export async function authenticationType() {
+  try {
+    const response = await api.get(`${BASE_URL_API}auth_type`);
+    if (response.status === 200) {
+      const data = response.data;
+      return data;
+    }
+  } catch (error) {
+    throw error;
+  }
+}
+
 export async function renewAccessToken(token: string) {
   try {
     if (token) {
