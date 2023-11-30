@@ -66,8 +66,10 @@ export default function LoginPage(): JSX.Element {
     }
   }
 
-  if(isOidcLogin && !cookies.get("id_tkn_lflw")) {
-    window.location.replace("/api/v1/login")
+  if(isOidcLogin) {
+    if(!cookies.get("id_tkn_lflw")) {
+	window.location.replace("/api/v1/login")
+    }
     return <></>;
   } else {
   return (
