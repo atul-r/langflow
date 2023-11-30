@@ -1,6 +1,7 @@
 import * as Form from "@radix-ui/react-form";
 import { useContext, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import Cookies from "universal-cookie";
 import InputComponent from "../../components/inputComponent";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -17,7 +18,7 @@ import {
 export default function LoginPage(): JSX.Element {
   const [inputState, setInputState] =
     useState<loginInputStateType>(CONTROL_LOGIN_STATE);
-
+  const cookies = new Cookies();
   const { password, username } = inputState;
   const { login, isOidcLogin, getAuthentication, setUserData, setIsAdmin } =
     useContext(AuthContext);
@@ -65,7 +66,7 @@ export default function LoginPage(): JSX.Element {
     }
   }
 
-  if(isOidcLogin) {
+  if(isOidcLogin && !cookies.get("id_tkn_lflw")) {
     window.location.replace("/api/v1/login")
     return <></>;
   } else {
