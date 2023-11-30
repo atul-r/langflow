@@ -91,10 +91,7 @@ if authentication_type == 'oidc':
             raise credentials_exception
 
         try:
-            logger.info(f"GET_CURRENT_USER: v0.7.3 decoding token")
-            logger.info(f"GET_CURRENT_USER: authentication_type {authentication_type}")
             key = '-----BEGIN PUBLIC KEY-----\n' + settings_service.auth_settings.SECRET_KEY + '\n-----END PUBLIC KEY-----'
-            logger.info(f"GET_CURRENT_USER: key {key}")
             payload = jwt.decode(
                 token,
                 key,
@@ -104,24 +101,21 @@ if authentication_type == 'oidc':
             user_id: UUID = payload.get("sub")  # type: ignore
             user_name: str = payload.get("preferred_username")
             token_type: str = payload.get("type")  # type: ignore
-            logger.info(f"GET_CURRENT_USER: token decoded user_id {user_id}")
-            logger.info(f"GET_CURRENT_USER: token decoded token_type {token_type}")
             if expires := payload.get("exp", None):
                 expires_datetime = datetime.fromtimestamp(expires, timezone.utc)
                 # TypeError: can't compare offset-naive and offset-aware datetimes
                 if datetime.now(timezone.utc) > expires_datetime:
-                    logger.info(f"GET_CURRENT_USER: token expired")
+                    logger.error(f"access token token is expired")
                     raise credentials_exception
 
             if user_id is None or token_type:
-                logger.info(f"GET_CURRENT_USER: insufficient claims in token")
+                logger.error(f"insufficient claims in access_token")
                 raise credentials_exception
         except JWTError as e:
+            logger.error(f"JWTError {e}")
             raise credentials_exception from e
 
-        logger.info(f"GET_CURRENT_USER: fetching user with id {user_id} from db")
         user = get_user_by_id(db, user_id)  # type: ignore
-
         try:
             if user is None:
                 user = User(
@@ -131,21 +125,18 @@ if authentication_type == 'oidc':
                     is_superuser=False,
                     password=get_password_hash('dummy')
                 )
-                logger.info(f"GET_CURRENT_USER: User {user}")
                 db.add(user)
                 db.commit()
                 db.refresh(user)
-                logger.info(f"GET_CURRENT_USER: User added !!")
+                logger.debug(f"User {user_name} added successfully")
         except IntegrityError as e:
-            logger.info(f"GET_CURRENT_USER: IntegrityError {e}")  
+            logger.error(f"IntegrityError {e}")  
             db.rollback()
             raise HTTPException(
                 status_code=400, detail="Unable to add this user"
             ) from e
-
-        logger.info(f"GET_CURRENT_USER: fetched user from db {user}")
         if user is None or not user.is_active:
-            logger.info(f"GET_CURRENT_USER: unable to fetch user from db, id {user_id}")
+            logger.error(f"unable to fetch active user {user_name} from db")
             raise credentials_exception
         return user
 else:
