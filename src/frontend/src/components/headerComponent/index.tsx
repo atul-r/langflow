@@ -26,7 +26,7 @@ export default function Header(): JSX.Element {
   const { dark, setDark } = useContext(darkContext);
   const { notificationCenter } = useContext(alertContext);
   const location = useLocation();
-  const { logout, autoLogin, isAdmin, userData } = useContext(AuthContext);
+  const { logout, isOidcLogin, autoLogin, isAdmin, userData } = useContext(AuthContext);
   const { stars, gradientIndex } = useContext(darkContext);
   const navigate = useNavigate();
 
@@ -164,7 +164,11 @@ export default function Header(): JSX.Element {
                     className="cursor-pointer"
                     onClick={() => {
                       logout();
-                      navigate("/login");
+                      if(isOidcLogin){
+                        window.location.replace("/api/v1/logout");  
+                      } else {
+                        navigate("/login");
+                      }
                     }}
                   >
                     Sign Out

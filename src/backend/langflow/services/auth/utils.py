@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader, APIKeyQuery, OAuth2PasswordBearer
@@ -14,8 +15,11 @@ from langflow.services.database.models.user.crud import (
 )
 from langflow.services.getters import get_session, get_settings_service
 from sqlmodel import Session
+from sqlalchemy.exc import IntegrityError
+from langflow.utils.logger import logger
 
-oauth2_login = OAuth2PasswordBearer(tokenUrl="api/v1/login")
+authentication_type = os.environ.get('LANGFLOW_AUTHENTICATION_TYPE')
+oauth2_login = OAuth2PasswordBearer(tokenUrl="api/v1/login", auto_error=False)
 
 API_KEY_NAME = "x-api-key"
 
@@ -67,49 +71,116 @@ async def api_key_security(
     elif isinstance(result, User):
         return result
 
+if authentication_type == 'oidc':
+    async def get_current_user(
+        token: Annotated[str, Depends(oauth2_login)],
+        db: Session = Depends(get_session),
+    ) -> User:
+        settings_service = get_settings_service()
 
-async def get_current_user(
-    token: Annotated[str, Depends(oauth2_login)],
-    db: Session = Depends(get_session),
-) -> User:
-    settings_service = get_settings_service()
-
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    if isinstance(token, Coroutine):
-        token = await token
-
-    if settings_service.auth_settings.SECRET_KEY is None:
-        raise credentials_exception
-
-    try:
-        payload = jwt.decode(
-            token,
-            settings_service.auth_settings.SECRET_KEY,
-            algorithms=[settings_service.auth_settings.ALGORITHM],
+        credentials_exception = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-        user_id: UUID = payload.get("sub")  # type: ignore
-        token_type: str = payload.get("type")  # type: ignore
-        if expires := payload.get("exp", None):
-            expires_datetime = datetime.fromtimestamp(expires, timezone.utc)
-            # TypeError: can't compare offset-naive and offset-aware datetimes
-            if datetime.now(timezone.utc) > expires_datetime:
-                raise credentials_exception
 
-        if user_id is None or token_type:
+        if isinstance(token, Coroutine):
+            token = await token
+
+        if settings_service.auth_settings.SECRET_KEY is None:
             raise credentials_exception
-    except JWTError as e:
-        raise credentials_exception from e
 
-    user = get_user_by_id(db, user_id)  # type: ignore
-    if user is None or not user.is_active:
-        raise credentials_exception
-    return user
+        try:
+            key = '-----BEGIN PUBLIC KEY-----\n' + settings_service.auth_settings.SECRET_KEY + '\n-----END PUBLIC KEY-----'
+            payload = jwt.decode(
+                token,
+                key,
+                algorithms=[settings_service.auth_settings.ALGORITHM],
+                options=dict(verify_aud=False)
+            )
+            user_id: UUID = payload.get("sub")  # type: ignore
+            user_name: str = payload.get("preferred_username")
+            token_type: str = payload.get("type")  # type: ignore
+            if expires := payload.get("exp", None):
+                expires_datetime = datetime.fromtimestamp(expires, timezone.utc)
+                # TypeError: can't compare offset-naive and offset-aware datetimes
+                if datetime.now(timezone.utc) > expires_datetime:
+                    logger.error(f"access token token is expired")
+                    raise credentials_exception
 
+            if user_id is None or token_type:
+                logger.error(f"insufficient claims in access_token")
+                raise credentials_exception
+        except JWTError as e:
+            logger.error(f"JWTError {e}")
+            raise credentials_exception from e
+
+        user = get_user_by_id(db, user_id)  # type: ignore
+        try:
+            if user is None:
+                user = User(
+                    id=user_id,
+                    username=user_name,
+                    is_active=True,
+                    is_superuser=False,
+                    password=get_password_hash('dummy')
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
+                logger.debug(f"User {user_name} added successfully")
+        except IntegrityError as e:
+            logger.error(f"IntegrityError {e}")  
+            db.rollback()
+            raise HTTPException(
+                status_code=400, detail="Unable to add this user"
+            ) from e
+        if user is None or not user.is_active:
+            logger.error(f"unable to fetch active user {user_name} from db")
+            raise credentials_exception
+        return user
+else:
+    async def get_current_user(
+        token: Annotated[str, Depends(oauth2_login)],
+        db: Session = Depends(get_session),
+    ) -> User:
+        settings_service = get_settings_service()
+
+        credentials_exception = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+        if isinstance(token, Coroutine):
+            token = await token
+
+        if settings_service.auth_settings.SECRET_KEY is None:
+            raise credentials_exception
+
+        try:
+            payload = jwt.decode(
+                token,
+                settings_service.auth_settings.SECRET_KEY,
+                algorithms=[settings_service.auth_settings.ALGORITHM],
+            )
+            user_id: UUID = payload.get("sub")  # type: ignore
+            token_type: str = payload.get("type")  # type: ignore
+            if expires := payload.get("exp", None):
+                expires_datetime = datetime.fromtimestamp(expires, timezone.utc)
+                # TypeError: can't compare offset-naive and offset-aware datetimes
+                if datetime.now(timezone.utc) > expires_datetime:
+                    raise credentials_exception
+
+            if user_id is None or token_type:
+                raise credentials_exception
+        except JWTError as e:
+            raise credentials_exception from e
+
+        user = get_user_by_id(db, user_id)  # type: ignore
+        if user is None or not user.is_active:
+            raise credentials_exception
+        return user
 
 def get_current_active_user(current_user: Annotated[User, Depends(get_current_user)]):
     if not current_user.is_active:
